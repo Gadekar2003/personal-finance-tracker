@@ -1,405 +1,797 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import { useFinancial } from "../context/FinancialContext";
 import {
-  FaBars,
+  FaHome,
   FaUser,
   FaCog,
-  FaChartPie,
-  FaExchangeAlt,
-  FaWallet,
-  FaArrowDown,
+  FaSignOutAlt,
+  FaBars,
+  FaBell,
+  FaPlus,
   FaArrowUp,
+  FaArrowDown,
+  FaCalendarAlt,
+  FaWallet,
+  FaPiggyBank,
+  FaChartBar,
+  FaTimes,
+  FaMoneyBillWave,
+  FaCreditCard,
+  FaExchangeAlt,
+  FaSun,
+  FaMoon,
+  FaEdit,
+  FaTrash
 } from "react-icons/fa";
-import { motion } from "framer-motion";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Legend,
-} from "recharts";
-import logo from "../assets/logo.png";
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 
 const Dashboard = () => {
-  const { currentUser } = useAuth();
-  const [isOpen, setIsOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState("dashboard");
-  const [currency, setCurrency] = useState("INR");
-  const [showForm, setShowForm] = useState(false);
-  const [transactions, setTransactions] = useState([]);
-  const [formData, setFormData] = useState({
-    description: "",
-    amount: "",
-    category: "food",
-    type: "income",
+  const navigate = useNavigate();
+  const { darkMode, toggleDarkMode } = useTheme();
+  const { currentUser, signout, user } = useAuth();
+  const { financialData, addTransaction, deleteTransaction, updateTransaction } = useFinancial();
+  const [activeSection, setActiveSection] = useState("dashboard");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState(null);
+  const [newTransaction, setNewTransaction] = useState({
+    type: 'expense',
+    amount: '',
+    category: '',
+    description: '',
+    date: new Date().toISOString().split('T')[0]
   });
-  const [editIndex, setEditIndex] = useState(null);
 
-  const toggleSidebar = () => setIsOpen(!isOpen);
+  // Ensure we have numbers for calculations
+  const monthlyIncome = Number(financialData?.monthlyIncome) || 0;
+  const monthlyExpenses = Number(financialData?.monthlyExpenses) || 0;
+  const savings = Number(financialData?.savings) || 0;
+  const totalBalance = monthlyIncome - monthlyExpenses;
+
+  // Colors for charts
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
+
+  // Add this function to calculate category totals from transactions
+  const calculateCategoryTotals = () => {
+    const categoryTotals = {
+      food: 0,
+      transportation: 0,
+      entertainment: 0,
+      shopping: 0,
+      bills: 0,
+      others: 0
+    };
+
+    // Sum up expenses by category from transactions
+    financialData?.recentTransactions?.forEach(transaction => {
+      if (transaction.type === 'expense' && transaction.category) {
+        categoryTotals[transaction.category] = (categoryTotals[transaction.category] || 0) + Number(transaction.amount);
+      }
+    });
+
+    return [
+      { name: 'Food & Dining', value: categoryTotals.food },
+      { name: 'Transportation', value: categoryTotals.transportation },
+      { name: 'Entertainment', value: categoryTotals.entertainment },
+      { name: 'Shopping', value: categoryTotals.shopping },
+      { name: 'Bills & Utilities', value: categoryTotals.bills },
+      { name: 'Others', value: categoryTotals.others }
+    ].filter(item => item.value > 0);
+  };
+
+  // Prepare data for the pie chart
+  const pieChartData = calculateCategoryTotals();
+
+  const handleLogout = async () => {
+    try {
+      signout();
+      navigate("/");
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  };
+
+  const handleTransactionSubmit = (e) => {
+    e.preventDefault();
+    if (editingTransaction) {
+      updateTransaction(editingTransaction.id, newTransaction);
+      setEditingTransaction(null);
+    } else {
+      addTransaction(newTransaction);
+    }
+    setNewTransaction({
+      type: 'expense',
+      amount: '',
+      category: '',
+      description: '',
+      date: new Date().toISOString().split('T')[0]
+    });
+  };
+
+  const handleEdit = (transaction) => {
+    setEditingTransaction(transaction);
+    setNewTransaction({
+      type: transaction.type,
+      amount: transaction.amount,
+      category: transaction.category,
+      description: transaction.description,
+      date: transaction.date
+    });
+  };
+
+  const handleDelete = (transactionId) => {
+    if (window.confirm('Are you sure you want to delete this transaction?')) {
+      deleteTransaction(transactionId);
+    }
+  };
 
   const navItems = [
-    { id: "dashboard", label: "Dashboard", icon: <FaChartPie /> },
-    { id: "transactions", label: "Transactions", icon: <FaExchangeAlt /> },
-    { id: "insights", label: "Spending Insights", icon: <FaChartPie /> },
-    { id: "settings", label: "Settings", icon: <FaCog /> },
+    { id: "dashboard", label: "Dashboard", icon: FaHome },
+    { id: "transactions", label: "Transactions", icon: FaWallet },
+    { id: "insights", label: "Financial Insights", icon: FaChartBar },
+    { id: "settings", label: "Settings", icon: FaCog },
   ];
 
-  const totalIncome = transactions
-    .filter((t) => t.type === "income")
-    .reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
-  const totalExpenses = transactions
-    .filter((t) => t.type === "expenses")
-    .reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
-  const totalBalance = totalIncome - totalExpenses;
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!formData.description || !formData.amount) return;
-
-    if (editIndex !== null) {
-      const updated = [...transactions];
-      updated[editIndex] = { ...formData, date: new Date().toLocaleDateString() };
-      setTransactions(updated);
-      setEditIndex(null);
-    } else {
-      setTransactions([
-        ...transactions,
-        { ...formData, date: new Date().toLocaleDateString() },
-      ]);
-    }
-    setFormData({ description: "", amount: "", category: "food", type: "income" });
-    setShowForm(false);
-  };
-
-  const handleEdit = (index) => {
-    const tx = transactions[index];
-    setFormData(tx);
-    setShowForm(true);
-    setEditIndex(index);
-  };
-
-  const handleDelete = (index) => {
-    const updated = [...transactions];
-    updated.splice(index, 1);
-    setTransactions(updated);
-  };
-
-  const pieData = [
-    { name: "Food", value: sumByCategory("food") },
-    { name: "Transport", value: sumByCategory("transport") },
-    { name: "Utilities", value: sumByCategory("utilities") },
-    { name: "Entertainment", value: sumByCategory("entertainment") },
-    { name: "Other", value: sumByCategory("other") },
-  ];
-
-  function sumByCategory(cat) {
-    return transactions
-      .filter((t) => t.category === cat && t.type === "expenses")
-      .reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
-  }
-
-  const barData = [
-    {
-      name: "Summary",
-      Income: totalIncome,
-      Expenses: totalExpenses,
-    },
-  ];
-
-  const COLORS = ["#8884d8", "#82ca9d", "#ffc658", "#ff8042", "#8dd1e1"];
-
-  return (
-    <div className="flex min-h-screen bg-gradient-to-br from-purple-100 via-blue-100 to-pink-100 dark:from-gray-900 dark:via-indigo-900 dark:to-purple-900 text-gray-900 dark:text-white">
-      {/* Sidebar */}
-      <motion.div
-        animate={{ width: isOpen ? 220 : 70 }}
-        transition={{ duration: 0.3 }}
-        className="bg-white dark:bg-gray-800 shadow-lg p-4 flex flex-col"
-      >
-        <div className="flex items-center space-x-2 mb-6">
-          <img src={logo} alt="FinMate Logo" className="w-8 h-8" />
-          {isOpen && <span className="text-xl font-bold text-purple-600">FinMate</span>}
-        </div>
-        <button onClick={toggleSidebar} className="mb-6 focus:outline-none">
-          <FaBars />
-        </button>
-        <nav className="space-y-4">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`flex items-center gap-2 w-full py-2 px-3 rounded-lg transition hover:bg-purple-100 dark:hover:bg-gray-700 ${
-                activeTab === item.id ? "bg-purple-200 dark:bg-gray-700" : ""
-              }`}
-            >
-              {item.icon}
-              {isOpen && <span>{item.label}</span>}
-            </button>
-          ))}
-        </nav>
-      </motion.div>
-
-      {/* Main Content */}
-      <div className="flex-1 p-6">
-        {activeTab === "dashboard" && (
-          <>
-            <h1 className="text-2xl font-bold">
-              Welcome, {currentUser?.displayName || "User"}!
-            </h1>
-            <p className="mb-6 text-sm text-gray-600 dark:text-gray-400">
-              Continue your journey to financial success
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-                <div className="flex items-center space-x-2">
-                  <FaWallet className="text-purple-500" />
-                  <h2 className="text-lg font-semibold">Total Balance</h2>
-                </div>
-                <p className="mt-2 text-2xl font-bold">
-                  ₹{totalBalance.toLocaleString()}
-                </p>
-              </div>
-              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-                <div className="flex items-center space-x-2">
-                  <FaArrowDown className="text-green-500" />
-                  <h2 className="text-lg font-semibold">Income</h2>
-                </div>
-                <p className="mt-2 text-2xl font-bold">
-                  ₹{totalIncome.toLocaleString()}
-                </p>
-              </div>
-              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-                <div className="flex items-center space-x-2">
-                  <FaArrowUp className="text-red-500" />
-                  <h2 className="text-lg font-semibold">Expenses</h2>
-                </div>
-                <p className="mt-2 text-2xl font-bold">
-                  ₹{totalExpenses.toLocaleString()}
-                </p>
+  const renderDashboard = () => {
+    return (
+      <div className="space-y-6">
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {/* Total Balance Card */}
+          <div className={`p-6 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-lg font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Total Balance
+              </h3>
+              <div className={`p-3 rounded-full ${darkMode ? 'bg-blue-900' : 'bg-blue-100'}`}>
+                <FaWallet className={`w-6 h-6 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
               </div>
             </div>
+            <p className={`text-3xl font-bold ${totalBalance >= 0 ? darkMode ? 'text-green-400' : 'text-green-600' : darkMode ? 'text-red-400' : 'text-red-600'}`}>
+              ₹{totalBalance.toFixed(2)}
+            </p>
+            <p className={`text-sm mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              {totalBalance >= 0 ? 'Positive Balance' : 'Negative Balance'}
+            </p>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-                <h3 className="font-bold mb-2">Expenses Categories Overview</h3>
-                <PieChart width={300} height={300}>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={100}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
+          {/* Monthly Income Card */}
+          <div className={`p-6 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-lg font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Monthly Income
+              </h3>
+              <div className={`p-3 rounded-full ${darkMode ? 'bg-green-900' : 'bg-green-100'}`}>
+                <FaArrowUp className={`w-6 h-6 ${darkMode ? 'text-green-400' : 'text-green-600'}`} />
               </div>
-              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-                <h3 className="font-bold mb-2">Income vs Expenses</h3>
-                <BarChart width={300} height={300} data={barData}>
+            </div>
+            <p className={`text-3xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              ₹{monthlyIncome.toFixed(2)}
+            </p>
+            <p className={`text-sm mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              Total Income This Month
+            </p>
+          </div>
+
+          {/* Monthly Expenses Card */}
+          <div className={`p-6 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-lg font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Monthly Expenses
+              </h3>
+              <div className={`p-3 rounded-full ${darkMode ? 'bg-red-900' : 'bg-red-100'}`}>
+                <FaArrowDown className={`w-6 h-6 ${darkMode ? 'text-red-400' : 'text-red-600'}`} />
+              </div>
+            </div>
+            <p className={`text-3xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              ₹{monthlyExpenses.toFixed(2)}
+            </p>
+            <p className={`text-sm mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              Total Expenses This Month
+            </p>
+          </div>
+
+          {/* Savings Card */}
+          <div className={`p-6 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-lg font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Savings
+              </h3>
+              <div className={`p-3 rounded-full ${darkMode ? 'bg-purple-900' : 'bg-purple-100'}`}>
+                <FaPiggyBank className={`w-6 h-6 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`} />
+              </div>
+            </div>
+            <p className={`text-3xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              ₹{savings.toFixed(2)}
+            </p>
+            <p className={`text-sm mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              Total Savings This Month
+            </p>
+          </div>
+        </div>
+
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Pie Chart for Categories */}
+          <div className={`p-6 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+            <h3 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+              Expenses by Category
+            </h3>
+            <div className="h-80">
+              {pieChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieChartData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={80}
+                      fill="#8884d8"
+                      label={({ name, value }) => `${name}: ₹${value.toFixed(2)}`}
+                    >
+                      {pieChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value) => `₹${value.toFixed(2)}`}
+                      contentStyle={{
+                        backgroundColor: darkMode ? '#1F2937' : '#FFFFFF',
+                        border: 'none',
+                        borderRadius: '8px',
+                        color: darkMode ? '#FFFFFF' : '#000000'
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="bottom"
+                      height={36}
+                      formatter={(value) => (
+                        <span style={{ color: darkMode ? '#FFFFFF' : '#000000' }}>
+                          {value}
+                        </span>
+                      )}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className={`h-full flex items-center justify-center ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  No expense data available
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Bar Chart for Monthly Data */}
+          <div className={`p-6 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+            <h3 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+              Monthly Overview
+            </h3>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={[
+                    { name: 'Income', amount: monthlyIncome },
+                    { name: 'Expenses', amount: monthlyExpenses }
+                  ]}
+                >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
                   <YAxis />
-                  <Tooltip />
+                  <Tooltip
+                    formatter={(value) => `₹${value}`}
+                    contentStyle={{
+                      backgroundColor: darkMode ? '#1F2937' : '#FFFFFF',
+                      border: 'none',
+                      borderRadius: '8px',
+                      color: darkMode ? '#FFFFFF' : '#000000'
+                    }}
+                  />
                   <Legend />
-                  <Bar dataKey="Income" fill="#82ca9d" />
-                  <Bar dataKey="Expenses" fill="#ff8042" />
+                  <Bar dataKey="amount" fill="#8884d8" />
                 </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderTransactions = () => {
+    return (
+      <div className="space-y-6">
+        {/* Add Transaction Form */}
+        <div className={`p-6 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+          <h3 className={`text-xl font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+            {editingTransaction ? 'Edit Transaction' : 'Add New Transaction'}
+          </h3>
+          <form onSubmit={handleTransactionSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Type
+                </label>
+                <select
+                  value={newTransaction.type}
+                  onChange={(e) => setNewTransaction({ ...newTransaction, type: e.target.value })}
+                  className={`w-full p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'
+                    }`}
+                  required
+                >
+                  <option value="income">Income</option>
+                  <option value="expense">Expense</option>
+                </select>
+              </div>
+              <div>
+                <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Amount
+                </label>
+                <input
+                  type="number"
+                  value={newTransaction.amount}
+                  onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })}
+                  className={`w-full p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'
+                    }`}
+                  placeholder="Enter amount"
+                  required
+                />
+              </div>
+              <div>
+                <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Category
+                </label>
+                <select
+                  value={newTransaction.category}
+                  onChange={(e) => setNewTransaction({ ...newTransaction, category: e.target.value })}
+                  className={`w-full p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'
+                    }`}
+                  required
+                >
+                  <option value="">Select Category</option>
+                  <option value="food">Food & Dining</option>
+                  <option value="transportation">Transportation</option>
+                  <option value="entertainment">Entertainment</option>
+                  <option value="shopping">Shopping</option>
+                  <option value="bills">Bills & Utilities</option>
+                  <option value="others">Others</option>
+                </select>
+              </div>
+              <div>
+                <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={newTransaction.date}
+                  onChange={(e) => setNewTransaction({ ...newTransaction, date: e.target.value })}
+                  className={`w-full p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'
+                    }`}
+                  required
+                />
               </div>
             </div>
-          </>
-        )}
-
-        {activeTab === "transactions" && (
-          <>
-            <h2 className="text-xl font-bold mb-2">Transactions</h2>
-            <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
-              Manage your financial transactions.
-            </p>
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="mb-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded"
-            >
-              + Add Transaction
-            </button>
-
-            {showForm && (
-              <form
-                onSubmit={handleSubmit}
-                className="space-y-4 bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg mb-6"
-              >
-                <h3 className="font-bold text-lg">Add New Transaction</h3>
-                <div>
-                  <label>Description</label>
-                  <input
-                    type="text"
-                    name="description"
-                    value={formData.description}
-                    onChange={handleInputChange}
-                    placeholder="Enter transaction description"
-                    className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded"
-                  />
-                </div>
-                <div>
-                  <label>Amount</label>
-                  <input
-                    type="number"
-                    name="amount"
-                    value={formData.amount}
-                    onChange={handleInputChange}
-                    placeholder="Enter amount"
-                    className="w-full p-2 bg-gray-100 dark:bg-gray-700 rounded"
-                  />
-                </div>
-                <div>
-                  <label>Category</label>
-                  <select
-                    name="category"
-                    value={formData.category}
-                    onChange={handleInputChange}
-                    className="w-full p-2 bg-white dark:bg-gray-700 rounded"
-                  >
-                    <option value="food">Food</option>
-                    <option value="transport">Transport</option>
-                    <option value="utilities">Utilities</option>
-                    <option value="entertainment">Entertainment</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label>Type</label>
-                  <select
-                    name="type"
-                    value={formData.type}
-                    onChange={handleInputChange}
-                    className="w-full p-2 bg-white dark:bg-gray-700 rounded"
-                  >
-                    <option value="income">Income</option>
-                    <option value="expenses">Expenses</option>
-                  </select>
-                </div>
-                <div className="flex justify-end gap-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowForm(false);
-                      setEditIndex(null);
-                      setFormData({ description: "", amount: "", category: "food", type: "income" });
-                    }}
-                    className="bg-gray-400 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded"
-                  >
-                    {editIndex !== null ? "Update" : "Add"} Transaction
-                  </button>
-                </div>
-              </form>
-            )}
-
-            <h3 className="text-lg font-bold mb-2">Transaction History</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full bg-white dark:bg-gray-800">
-                <thead>
-                  <tr>
-                    <th className="p-2 text-left">Date</th>
-                    <th className="p-2 text-left">Description</th>
-                    <th className="p-2 text-left">Category</th>
-                    <th className="p-2 text-left">Amount</th>
-                    <th className="p-2 text-left">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transactions.map((tx, index) => (
-                    <tr key={index} className="border-b border-gray-200 dark:border-gray-700">
-                      <td className="p-2">{tx.date}</td>
-                      <td className="p-2">{tx.description}</td>
-                      <td className="p-2 capitalize">{tx.category}</td>
-                      <td className="p-2">₹{tx.amount}</td>
-                      <td className="p-2 space-x-2">
-                        <button
-                          onClick={() => handleEdit(index)}
-                          className="text-blue-500 hover:underline"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(index)}
-                          className="text-red-500 hover:underline"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
-        {activeTab === "settings" && (
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg max-w-md space-y-4">
             <div>
-              <label className="text-sm font-semibold">Name</label>
+              <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Description
+              </label>
               <input
                 type="text"
-                value={currentUser?.displayName}
-                readOnly
-                className="w-full bg-gray-100 dark:bg-gray-700 p-2 rounded mt-1"
+                value={newTransaction.description}
+                onChange={(e) => setNewTransaction({ ...newTransaction, description: e.target.value })}
+                className={`w-full p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'
+                  }`}
+                placeholder="Enter description"
+                required
               />
             </div>
+            <div className="flex justify-end space-x-4">
+              {editingTransaction && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTransaction(null);
+                    setNewTransaction({
+                      type: 'expense',
+                      amount: '',
+                      category: '',
+                      description: '',
+                      date: new Date().toISOString().split('T')[0]
+                    });
+                  }}
+                  className={`px-4 py-2 rounded-lg ${darkMode ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="submit"
+                className={`px-4 py-2 rounded-lg ${darkMode ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-purple-600 text-white hover:bg-purple-700'
+                  }`}
+              >
+                {editingTransaction ? 'Update Transaction' : 'Add Transaction'}
+              </button>
+            </div>
+          </form>
+        </div>
 
+        {/* Transaction History */}
+        <div className={`p-6 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+          <h3 className={`text-xl font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+            Transaction History
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  <th className="text-left p-2">Date</th>
+                  <th className="text-left p-2">Type</th>
+                  <th className="text-left p-2">Category</th>
+                  <th className="text-left p-2">Description</th>
+                  <th className="text-right p-2">Amount</th>
+                  <th className="text-center p-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {financialData?.recentTransactions?.length > 0 ? (
+                  financialData.recentTransactions.map((transaction) => (
+                    <tr
+                      key={transaction.id}
+                      className={`border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}
+                    >
+                      <td className={`p-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        {new Date(transaction.date).toLocaleDateString()}
+                      </td>
+                      <td className={`p-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs ${transaction.type === 'income'
+                            ? darkMode
+                              ? 'bg-green-900 text-green-300'
+                              : 'bg-green-100 text-green-800'
+                            : darkMode
+                              ? 'bg-red-900 text-red-300'
+                              : 'bg-red-100 text-red-800'
+                            }`}
+                        >
+                          {transaction.type}
+                        </span>
+                      </td>
+                      <td className={`p-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        {transaction.category}
+                      </td>
+                      <td className={`p-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        {transaction.description}
+                      </td>
+                      <td className={`p-2 text-right ${transaction.type === 'income'
+                        ? darkMode ? 'text-green-400' : 'text-green-600'
+                        : darkMode ? 'text-red-400' : 'text-red-600'
+                        }`}>
+                        ₹{Number(transaction.amount).toFixed(2)}
+                      </td>
+                      <td className="p-2">
+                        <div className="flex justify-center space-x-2">
+                          <button
+                            onClick={() => handleEdit(transaction)}
+                            className={`p-1 rounded ${darkMode ? 'text-blue-400 hover:bg-gray-700' : 'text-blue-600 hover:bg-gray-100'
+                              }`}
+                          >
+                            <FaEdit />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(transaction.id)}
+                            className={`p-1 rounded ${darkMode ? 'text-red-400 hover:bg-gray-700' : 'text-red-600 hover:bg-gray-100'
+                              }`}
+                          >
+                            <FaTrash />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="6" className={`text-center p-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      No transactions found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderFinancialInsights = () => {
+    // Calculate savings rate
+    const savingsRate = monthlyIncome > 0
+      ? ((monthlyIncome - monthlyExpenses) / monthlyIncome) * 100
+      : 0;
+
+    return (
+      <div className="space-y-6">
+        {/* Income vs Expenses Chart */}
+        <div className={`p-6 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+          <h3 className={`text-xl font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+            Income vs Expenses
+          </h3>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={[
+                  { name: 'Income', value: monthlyIncome },
+                  { name: 'Expenses', value: monthlyExpenses }
+                ]}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip
+                  formatter={(value) => `₹${value}`}
+                  contentStyle={{
+                    backgroundColor: darkMode ? '#1F2937' : '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: darkMode ? '#FFFFFF' : '#000000'
+                  }}
+                />
+                <Legend />
+                <Bar dataKey="value" fill="#8884d8" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Savings Rate */}
+        <div className={`p-6 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+          <h3 className={`text-xl font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+            Savings Rate
+          </h3>
+          <div className="flex items-center justify-center">
+            <div className="relative w-48 h-48">
+              <svg className="w-full h-full" viewBox="0 0 100 100">
+                <circle
+                  className="text-gray-200"
+                  strokeWidth="10"
+                  stroke="currentColor"
+                  fill="transparent"
+                  r="40"
+                  cx="50"
+                  cy="50"
+                />
+                <circle
+                  className={`${savingsRate >= 0 ? 'text-green-500' : 'text-red-500'}`}
+                  strokeWidth="10"
+                  strokeDasharray={`${Math.abs(savingsRate) * 2.51} 251.2`}
+                  strokeLinecap="round"
+                  stroke="currentColor"
+                  fill="transparent"
+                  r="40"
+                  cx="50"
+                  cy="50"
+                  transform="rotate(-90 50 50)"
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className={`text-2xl font-bold ${savingsRate >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {savingsRate.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+          </div>
+          <p className={`text-center mt-4 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+            {savingsRate >= 0
+              ? 'You are saving money!'
+              : 'You are spending more than your income'}
+          </p>
+        </div>
+
+        {/* Category Breakdown */}
+        <div className={`p-6 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+          <h3 className={`text-xl font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+            Category Breakdown
+          </h3>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={pieChartData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={80}
+                  fill="#8884d8"
+                  label={({ name, value }) => `${name}: ₹${value}`}
+                >
+                  {pieChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value) => `₹${value}`}
+                  contentStyle={{
+                    backgroundColor: darkMode ? '#1F2937' : '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: darkMode ? '#FFFFFF' : '#000000'
+                  }}
+                />
+                <Legend
+                  verticalAlign="bottom"
+                  height={36}
+                  formatter={(value) => (
+                    <span style={{ color: darkMode ? '#FFFFFF' : '#000000' }}>
+                      {value}
+                    </span>
+                  )}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderSettings = () => {
+    return (
+      <div className="space-y-6">
+        <div className={`p-6 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+          <h3 className={`text-xl font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+            Account Settings
+          </h3>
+          <div className="space-y-4">
             <div>
-              <label className="text-sm font-semibold">Email</label>
+              <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Email
+              </label>
               <input
                 type="email"
-                value={currentUser?.email}
-                readOnly
-                className="w-full bg-gray-100 dark:bg-gray-700 p-2 rounded mt-1"
+                value={user?.email || ''}
+                disabled
+                className={`w-full p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-gray-400' : 'bg-gray-100 border-gray-300 text-gray-500'}`}
               />
             </div>
-
             <div>
-              <label className="text-sm font-semibold">Currency</label>
-              <select
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
-                className="w-full bg-white dark:bg-gray-700 p-2 rounded mt-1"
-              >
-                <option value="INR">INR - ₹</option>
-                <option value="USD">USD - $</option>
-                <option value="EUR">EUR - €</option>
-              </select>
+              <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Display Name
+              </label>
+              <input
+                type="text"
+                value={user?.displayName || ''}
+                className={`w-full p-2 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
+                placeholder="Enter display name"
+              />
             </div>
-
-            <button className="mt-4 w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 rounded">
-              Save Preferences
+            <button
+              className={`w-full py-2 px-4 rounded-lg font-medium ${darkMode
+                ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                : 'bg-purple-600 hover:bg-purple-700 text-white'
+                }`}
+            >
+              Update Profile
             </button>
           </div>
-        )}
+        </div>
+
+        <div className={`p-6 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+          <h3 className={`text-xl font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+            Preferences
+          </h3>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className={`${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                Dark Mode
+              </span>
+              <button
+                onClick={toggleDarkMode}
+                className={`p-2 rounded-lg ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+              >
+                {darkMode ? <FaSun className="w-6 h-6" /> : <FaMoon className="w-6 h-6" />}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className={`min-h-screen ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'}`}>
+      {/* Sidebar */}
+      <div className={`fixed inset-y-0 left-0 w-64 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300 ease-in-out ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg z-30`}>
+        <div className="p-6">
+          <h1 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>FinMate</h1>
+        </div>
+        <nav className="mt-6">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveSection(item.id)}
+              className={`flex items-center w-full px-6 py-3 text-left transition-colors duration-200 ${activeSection === item.id
+                ? darkMode
+                  ? 'bg-gray-700 text-white'
+                  : 'bg-purple-100 text-purple-600'
+                : darkMode
+                  ? 'text-gray-300 hover:bg-gray-700'
+                  : 'text-gray-600 hover:bg-gray-50'
+                }`}
+            >
+              <item.icon className="w-5 h-5 mr-3" />
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Main Content */}
+      <div className={`flex-1 ${isSidebarOpen ? 'ml-64' : 'ml-0'} transition-all duration-300`}>
+        {/* Header */}
+        <header className={`sticky top-0 z-20 ${darkMode ? 'bg-gray-800' : 'bg-white'} shadow-md`}>
+          <div className="flex items-center justify-between px-6 py-4">
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className={`p-2 rounded-lg ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+            >
+              <FaBars className="w-6 h-6" />
+            </button>
+
+            <div className="flex items-center space-x-4">
+              {/* Dark Mode Toggle */}
+              <button
+                onClick={toggleDarkMode}
+                className={`p-2 rounded-lg ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+              >
+                {darkMode ? <FaSun className="w-6 h-6" /> : <FaMoon className="w-6 h-6" />}
+              </button>
+
+              {/* Profile Menu */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowProfileMenu(!showProfileMenu)}
+                  className={`flex items-center space-x-2 p-2 rounded-lg ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}
+                >
+                  <FaUser className="w-6 h-6" />
+                  <span>{user?.email}</span>
+                </button>
+
+                {showProfileMenu && (
+                  <div className={`absolute right-0 mt-2 w-48 rounded-lg shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'} ring-1 ring-black ring-opacity-5`}>
+                    <div className="py-1">
+                      <button
+                        onClick={handleLogout}
+                        className={`flex items-center w-full px-4 py-2 text-left ${darkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100'}`}
+                      >
+                        <FaSignOutAlt className="w-5 h-5 mr-3" />
+                        Logout
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <main className="p-6">
+          <div className="space-y-6">
+            {activeSection === "dashboard" && renderDashboard()}
+            {activeSection === "transactions" && renderTransactions()}
+            {activeSection === "insights" && renderFinancialInsights()}
+            {activeSection === "settings" && renderSettings()}
+          </div>
+        </main>
       </div>
     </div>
   );
 };
 
-export default Dashboard;
+export default Dashboard; 

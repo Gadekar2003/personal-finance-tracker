@@ -1,116 +1,145 @@
 import React, { useState } from "react";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { Link, useNavigate } from "react-router-dom";
-import { auth } from "../firebase/firebase";
-import logo from "../assets/logo.png";
-import { FaEnvelope, FaLock } from "react-icons/fa";
-import { ToastContainer, toast } from "react-toastify";
-import { motion } from "framer-motion";
+import { useNavigate, Link } from "react-router-dom";
+import { useTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
+import { FaEnvelope, FaLock, FaEye, FaEyeSlash } from "react-icons/fa";
 
 const Login = () => {
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
-
+  const { darkMode } = useTheme();
+  const { signin } = useAuth();
   const navigate = useNavigate();
+  const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleChange = (e) => {
-    setFormData((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }));
-  };
-
-  const handleLogin = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const { email, password } = formData;
-
-    if (!email || !password) {
-      toast.error("All fields are required!");
-      return;
-    }
+    setError("");
+    setIsLoading(true);
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      toast.success("Login successful!");
-      setTimeout(() => navigate("/dashboard"), 1500);
+      const result = signin(email, password);
+
+      if (result.success) {
+        navigate("/dashboard");
+      } else {
+        setError(result.error || "Failed to sign in");
+      }
     } catch (err) {
-      toast.error("Invalid email or password.");
+      setError("An error occurred during sign in");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 px-4 py-10">
-      <ToastContainer />
-      <div className="w-full max-w-md">
-        <form
-          onSubmit={handleLogin}
-          className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl w-full space-y-6"
-        >
-          <div className="flex justify-center">
-            <motion.img
-              src={logo}
-              alt="Finance Logo"
-              className="w-16 h-16 rounded-full mb-2"
-              animate={{ y: [0, -10, 0] }}
-              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-            />
-          </div>
-
-          <h2 className="text-3xl font-extrabold text-center text-purple-700 dark:text-purple-300">
-            Welcome Back
+    <div className={`min-h-screen flex items-center justify-center px-4 py-12 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'
+      }`}>
+      <div className={`max-w-md w-full space-y-8 p-8 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800' : 'bg-white'
+        }`}>
+        <div>
+          <h2 className={`text-center text-3xl font-extrabold ${darkMode ? 'text-white' : 'text-gray-900'
+            }`}>
+            Sign in to your account
           </h2>
-          <p className="text-center text-sm text-gray-500 dark:text-gray-400">
-            Sign in to your finance tracker
-          </p>
-
-          <div className="relative">
-            <FaEnvelope className="absolute top-3 left-3 text-gray-400" />
-            <input
-              type="email"
-              name="email"
-              placeholder="Enter your email address"
-              value={formData.email}
-              onChange={handleChange}
-              className="pl-10 w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
-
-          <div className="relative">
-            <FaLock className="absolute top-3 left-3 text-gray-400" />
-            <input
-              type="password"
-              name="password"
-              placeholder="Enter your password"
-              value={formData.password}
-              onChange={handleChange}
-              className="pl-10 w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
-
-          <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
-            <label className="flex items-center">
-              <input type="checkbox" className="mr-2" /> Remember me
-            </label>
-            <Link to="/forgot-password" className="text-purple-600 hover:underline">
-              Forgot password?
-            </Link>
-          </div>
-
-          <button
-            type="submit"
-            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg transition duration-300"
-          >
-            Sign in
-          </button>
-
-          <p className="text-center text-sm text-gray-600 dark:text-gray-300">
-            Don’t have an account?{' '}
-            <Link to="/signup" className="text-purple-600 hover:underline font-semibold">
-              Sign up
+          <p className={`mt-2 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'
+            }`}>
+            Or{' '}
+            <Link
+              to="/signup"
+              className={`font-medium ${darkMode
+                ? 'text-purple-400 hover:text-purple-300'
+                : 'text-purple-600 hover:text-purple-500'
+                }`}
+            >
+              create a new account
             </Link>
           </p>
+        </div>
+
+        {error && (
+          <div className={`p-3 rounded-md ${darkMode ? 'bg-red-900/50' : 'bg-red-50'
+            }`}>
+            <p className={`text-sm ${darkMode ? 'text-red-200' : 'text-red-600'
+              }`}>
+              {error}
+            </p>
+          </div>
+        )}
+
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          <div className="rounded-md shadow-sm space-y-4">
+            <div>
+              <label htmlFor="email" className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'
+                }`}>
+                Email address
+              </label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={`mt-1 block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 ${darkMode
+                  ? 'bg-gray-700 border-gray-600 text-white'
+                  : 'bg-white border-gray-300 text-gray-900'
+                  }`}
+                placeholder="Enter your email"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'
+                }`}>
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={`mt-1 block w-full px-3 py-2 border rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 ${darkMode
+                    ? 'bg-gray-700 border-gray-600 text-white'
+                    : 'bg-white border-gray-300 text-gray-900'
+                    }`}
+                  placeholder="Enter your password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className={`absolute inset-y-0 right-0 pr-3 flex items-center ${darkMode ? 'text-gray-400' : 'text-gray-500'
+                    }`}
+                >
+                  {showPassword ? (
+                    <FaEyeSlash className="h-5 w-5" />
+                  ) : (
+                    <FaEye className="h-5 w-5" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${isLoading
+                ? 'bg-purple-400 cursor-not-allowed'
+                : 'bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500'
+                }`}
+            >
+              {isLoading ? 'Signing in...' : 'Sign in'}
+            </button>
+          </div>
         </form>
       </div>
     </div>
